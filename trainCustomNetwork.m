@@ -70,7 +70,7 @@ function [net, info] = trainCustomNetwork(dlnet, XTrain, YTrain, options)
         
         % 更新贡献度和成熟度
         for cnt = 1:length(NodeCon)
-            NodeConSum{cnt} = 0.6*NodeConSum{cnt} + 0.4*NodeCon{cnt};
+            NodeConSum{cnt} = 0.7*NodeConSum{cnt} + 0.3*NodeCon{cnt};
             NodeMaturity{cnt} = NodeMaturity{cnt}+1;
         end
 
