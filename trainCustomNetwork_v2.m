@@ -1,9 +1,10 @@
-function [net, info] = trainCustomNetwork_v2( XTrain, YTrain, dlLayers,options)
+function [net, info] = trainCustomNetwork_v2(XTrain, YTrain, dlLayers,options)
 dlnet=dlnetwork(dlLayers);
 % 将数据移到 GPU 上
-dlX = gpuArray(XTrain);
-dlY = gpuArray(YTrain);
-
+if options.ExecuEnvironment=='gpu'
+    dlX = gpuArray(XTrain);
+    dlY = gpuArray(YTrain);
+end
 % 训练网络
 numEpochs = options.MaxEpochs;
 InitialLearnRate=options.InitialLearnRate;
@@ -60,16 +61,18 @@ averageSqGrad=[];
 for epoch = 1:numEpochs
     % 动态调整学习率
     learningRate = InitialLearnRate * (1 / (1 + decayRate * epoch));
+    updateRate = updateRate*0.995;
     % 前向传播和损失计算，使用 dlfeval
     [gradients, loss] = dlfeval(@modelGradients, dlnet, dlX, dlY,L2Params);
+
     % 遍历 gradients 表中的每个元素，并添加噪声
-    for i = 1:size(gradients, 1)
+    for cnt = 1:size(gradients, 1)
         % 提取当前的梯度值
-        gradValue = gradients.Value{i};
+        gradValue = gradients.Value{cnt};
         % 生成与当前梯度维度匹配的随机噪声，并确保其类型与梯度一致  GPU or CPU
         noise = 0.2*learningRate * randn(size(gradValue), 'like', gradValue);  % 'like' 保证类型一致
         % 将噪声添加到梯度值中
-        gradients.Value{i} = gradValue + noise;
+        gradients.Value{cnt} = gradValue + noise;
     end
 
     % Adam Update / Adam 更新
@@ -77,10 +80,10 @@ for epoch = 1:numEpochs
         adamupdate( dlnet, gradients, averageGrad, averageSqGrad,epoch,learningRate,...
         beta1,beta2,epsilon);
 
-
     %% 贡献度相关计算
     % 计算贡献度
     NodeCon = ModelNodeContribution(dlnet, dlX,Layername,weightIdx);
+
     % 更新贡献度和成熟度
     for cnt = 1:LayerCnt
         NodeConSum{cnt} = 0.7*NodeConSum{cnt} + 0.3*NodeCon{cnt};
@@ -115,18 +118,20 @@ for epoch = 1:numEpochs
         TRate=TRate + sum((NodeConSum{cnt} > 1.1*ConSheld));
     end
 
-    % 记录损失值
-    lossArray(epoch) = extractdata(loss);
 
+    lossArray(epoch) = extractdata(loss);% 记录损失值
     if show_flag
         recordMetrics(monitor, epoch, "TotalLoss", loss,...
             "Manurity",TRate/NodeNum,...
             "NodeUpdate",NodeComSum);
         monitor.Progress = 100 * epoch / numEpochs;
     end
+
 end
 
 % 返回训练后的网络和损失信息
+
+
 net = dlnet;
 info = struct('Loss', lossArray);
 end
@@ -175,45 +180,45 @@ function dlnet = ResetNeuronParameters(dlnet, layerName, neuronIndex)
 % 输出参数:
 % dlnet          - 更新后的深度学习网络对象
 
-    % 查找目标层参数
-    LayerParams = dlnet.Learnables;
-    rows = LayerParams.Layer == layerName;
-    Para_Value=LayerParams.Value;
-    % 更新 FullyConnected 层的参数
-    Sel_Row = LayerParams.Parameter == "Weights";
-    if any(rows & Sel_Row)
-        % 获取并更新 Weights
-        Sel_Para = Para_Value{rows & Sel_Row};
-        Sel_Para(neuronIndex, :) = randn(size(Sel_Para(neuronIndex, :)), 'like', Sel_Para)/3;
-        Para_Value{rows & Sel_Row}= Sel_Para;
+% 查找目标层参数
+LayerParams = dlnet.Learnables;
+rows = LayerParams.Layer == layerName;
+Para_Value=LayerParams.Value;
+% 更新 FullyConnected 层的参数
+Sel_Row = LayerParams.Parameter == "Weights";
+if any(rows & Sel_Row)
+    % 获取并更新 Weights
+    Sel_Para = Para_Value{rows & Sel_Row};
+    Sel_Para(neuronIndex, :) = randn(size(Sel_Para(neuronIndex, :)), 'like', Sel_Para)/3;
+    Para_Value{rows & Sel_Row}= Sel_Para;
 
-        % 获取并更新 Bias
-        Sel_Row = LayerParams.Parameter == "Bias";
-        Sel_Para = Para_Value{rows & Sel_Row};
-        Sel_Para(neuronIndex, :) = randn(size(Sel_Para(neuronIndex, :)), 'like', Sel_Para)/3;% 更新偏置
-        Para_Value{rows & Sel_Row} = Sel_Para;
-    end
+    % 获取并更新 Bias
+    Sel_Row = LayerParams.Parameter == "Bias";
+    Sel_Para = Para_Value{rows & Sel_Row};
+    Sel_Para(neuronIndex, :) = randn(size(Sel_Para(neuronIndex, :)), 'like', Sel_Para)/3;% 更新偏置
+    Para_Value{rows & Sel_Row} = Sel_Para;
+end
 
-    % 更新 LSTM 层的参数
-    Sel_Row = LayerParams.Parameter == "InputWeights";
-    if any(rows & Sel_Row)
-        % 获取并更新 InputWeights
-        lstmneuronIndex=4*(neuronIndex-1)+1:4*neuronIndex;
-        Sel_Para = Para_Value{rows & Sel_Row};
-        Sel_Para(lstmneuronIndex, :) = randn(size(Sel_Para(lstmneuronIndex, :)), 'like', Sel_Para)/3; 
-        Para_Value{rows & Sel_Row} = Sel_Para;
+% 更新 LSTM 层的参数
+Sel_Row = LayerParams.Parameter == "InputWeights";
+if any(rows & Sel_Row)
+    % 获取并更新 InputWeights
+    lstmneuronIndex=4*(neuronIndex-1)+1:4*neuronIndex;
+    Sel_Para = Para_Value{rows & Sel_Row};
+    Sel_Para(lstmneuronIndex, :) = randn(size(Sel_Para(lstmneuronIndex, :)), 'like', Sel_Para)/3;
+    Para_Value{rows & Sel_Row} = Sel_Para;
 
-        % 获取并更新 RecurrentWeights
-        Sel_Row = LayerParams.Parameter == "RecurrentWeights";
-        Sel_Para = Para_Value{rows & Sel_Row};
-        Sel_Para(lstmneuronIndex, :) = randn(size(Sel_Para(lstmneuronIndex, :)), 'like', Sel_Para)/3; 
-        Para_Value{rows & Sel_Row} = Sel_Para;
+    % 获取并更新 RecurrentWeights
+    Sel_Row = LayerParams.Parameter == "RecurrentWeights";
+    Sel_Para = Para_Value{rows & Sel_Row};
+    Sel_Para(lstmneuronIndex, :) = randn(size(Sel_Para(lstmneuronIndex, :)), 'like', Sel_Para)/3;
+    Para_Value{rows & Sel_Row} = Sel_Para;
 
-        % 获取并更新 Bias
-        Sel_Row = LayerParams.Parameter == "Bias";
-        Sel_Para = Para_Value{rows & Sel_Row};
-        Sel_Para(lstmneuronIndex, :) = randn(size(Sel_Para(lstmneuronIndex, :)), 'like', Sel_Para)/3; % 更新偏置
-        Para_Value{rows & Sel_Row} = Sel_Para;
-    end
-    dlnet.Learnables.Value=Para_Value;
+    % 获取并更新 Bias
+    Sel_Row = LayerParams.Parameter == "Bias";
+    Sel_Para = Para_Value{rows & Sel_Row};
+    Sel_Para(lstmneuronIndex, :) = randn(size(Sel_Para(lstmneuronIndex, :)), 'like', Sel_Para)/3; % 更新偏置
+    Para_Value{rows & Sel_Row} = Sel_Para;
+end
+dlnet.Learnables.Value=Para_Value;
 end
