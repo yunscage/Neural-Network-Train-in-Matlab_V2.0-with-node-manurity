@@ -1,59 +1,59 @@
-load("Demo3Data.mat");
-Mylayers=[
-    featureInputLayer(14)
-    % lstmLayer(14,"OutputMode","sequence");
-    fullyConnectedLayer(108)
-    fullyConnectedLayer(64)
-    fullyConnectedLayer(32)
-    fullyConnectedLayer(32)
-    tanhLayer
-    fullyConnectedLayer(1)
-    % regressionLayer
+
+load('SourceData.mat')
+YSource=YSource*3-2;
+XSource=dlarray(XSource,'CB');
+
+InputAESize=size(XSource,1);
+LayerNeckSize=24;
+MyAElayer=[featureInputLayer(InputAESize)
+    fullyConnectedLayer(496)
+    fullyConnectedLayer(72)
+    fullyConnectedLayer(LayerNeckSize,'Name','fc_Neck')
+    fullyConnectedLayer(72)
+    fullyConnectedLayer(496)
+    fullyConnectedLayer(InputAESize)
     ];
 
-MyOptions = struct('MaxEpochs', 600, ...
+FeatureSize=14;
+
+
+MySOHlayer=[
+    featureInputLayer(LayerNeckSize+FeatureSize)
+    lstmLayer(128,'OutputMode','sequence')
+    fullyConnectedLayer(64)
+    fullyConnectedLayer(8)
+    fullyConnectedLayer(1)
+    ];
+
+
+MyOptions = struct('MaxEpochs', 300, ...
     'InitialLearnRate', 1e-3, ...
     'ExecuEnvironment', 'gpu', ...% 使用GPU加速
      'L2Regularization', 0, ... % 加入L2正则化
-     'updateRate',2.5e-5, ... 
-     'Consheld', 0.05, ... % 贡献度激活阈值
-     'Plots', 'training-progress'); % training-progress none
+     'ReplaceRate',0, ... 
+     'Consheld', 0, ... % 贡献度激活阈值
+     'Plots', 'training-progress'); % training-progress   none
 
-ThisDataX=[];
-ThisDataY=[];
-PreDataX=DataX{1};
-PreDataY=DataY{1}/DataY{1}(1);
-PreXTrain = dlarray(PreDataX, 'CB');
-PreYTrain = dlarray(PreDataY, 'CB');
-for cnt=1:length(DataY)
-    ThisDataX=DataX{cnt};
-    ThisDataY=DataY{cnt}/DataY{cnt}(1);
+SOHSAE = trainCustomNetwork(XSource,XSource,MyAElayer,MyOptions);
+encoderNetSAE = dlnetwork(SOHSAE.Layers(1:4));
+XSource_feature=forward(encoderNetSAE,XSource);
+XSource_feature_Fused=[XSource_feature;zeros(FeatureSize,size(XSource,2))];
 
 
-    %% 使用自定义函数更新神经网络
-    Prenet=dlnetwork(Mylayers);
-    XTrain = dlarray(ThisDataX, 'CB');
-    YTrain = dlarray(ThisDataY, 'CB');
-    if cnt==1
-        Thisnet=trainCustomNetwork_v2(XTrain,YTrain,Mylayers,MyOptions);
-    else
-        MyOptions.InitialLearnRate=5e-4;
-        MyOptions.L2Regularization=5e-4;
-        Thisnet=trainCustomNetwork_v2(XTrain,YTrain,Thisnet.Layers,MyOptions);
-    end
-    ypred=forward(Thisnet,XTrain);
+MyOptions.L2Regularization=0.005;
+MyOptions.MaxEpochs=600;
+MyOptions.ReplaceRate=2e-4;
+MyOptions.Consheld=0.03;
+SOHnet = trainCustomNetwork(XSource_feature_Fused(:,1:10:end),YSource(:,1:10:end),MySOHlayer,MyOptions);
 
-    ypredpre=forward(Thisnet,PreXTrain);
-    figure;
-    plot(ThisDataX(7,:),ThisDataY,'k');hold on;
-    plot(ThisDataX(7,:),ypred,'r');
+YSource=YSource/3+2/3;
 
-    rmsetotal=extractdata(sqrt(mean((ThisDataY-ypred).^2)));
-    rmse1=extractdata(sqrt(mean((PreYTrain-ypredpre).^2)));
-    disp('******Result******');
-    disp('RMSEtotal=');
-    disp(rmsetotal);
-    disp('RMSE1=');
-    disp(rmse1);
-    pause(0.5);
-end
+Ypred=forward(SOHnet,XSource_feature_Fused)/3+2/3;
+
+subplot(1,2,1);
+plot(YSource,'k');hold on;
+plot(Ypred);
+subplot(1,2,2);
+plot(YSource,Ypred,'.');
+rmse=sqrt(mean((YSource-Ypred).^2));
+title(['RMSE= ',num2str(rmse*100),' (%)']);
