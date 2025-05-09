@@ -1,4 +1,4 @@
-# Neural-Network-Train-in-MatlabNeural-Network-Train-in-Matlab_V2.0-with-node-manurity
+# Neural-Network-Train-in-Matlab-with-continual-backpropagation
 
 The node manurity of the neural network is considered when update the model gradients. 
 Reference paper: "Loss of plasticity in deep continual learning". Nature 2024
