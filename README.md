@@ -9,4 +9,5 @@ url="https://www.nature.com/articles/s41586-024-07711-7" or "https://doi.org/10.
 url="https://www.nature.com/articles/s41586-024-07711-7" or "https://doi.org/10.1038/s41586-024-07711-7".
 
 instruction: Run the "DemoMain.m"
-运行Demain.m文件就可
+
+运行DemoMain.m文件就可
